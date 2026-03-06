@@ -2,6 +2,12 @@
 
 A Telegram bot that deploys [DNSTT](https://github.com/bugfloyd/dnstt-deploy) or [Slipstream](https://github.com/Fox-Fig/slipstream-rust-deploy) tunnel servers on your VPS via SSH.
 
+## Why Use This?
+
+- **Can't SSH to your server?** Under heavy internet restrictions, directly SSHing into a server can be difficult or impossible. This bot handles the SSH connection for you — all you need is Telegram access.
+- **Fast setup with a simple GUI.** No terminal skills needed. The bot walks you through the entire server setup with interactive buttons — just tap and deploy.
+- **Safe, shareable configs.** The bot creates dedicated nologin, no-shell system users with random credentials for each deployment. This means you can safely share tunnel configs with others without exposing your server's root access.
+
 ## Quick Start
 
 You have two options:
