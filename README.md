@@ -54,23 +54,27 @@ You have two options:
 1. Choose protocol (DNSTT or Slipstream)
 2. Enter server IP
 3. Enter SSH port (default: 22)
-4. Choose auth method (Password / SSH Key)
-5. Enter credentials
-6. Enter nameserver domain
-7. Enter MTU size (default: 1232)
-8. Choose tunnel mode
-9. (Slipstream only) Additional mode-specific options
-10. Review summary and confirm
-11. Bot connects via SSH and runs the deployment
+4. Enter SSH username (default: root)
+5. Choose auth method (Password / SSH Key)
+6. Enter credentials
+7. Enter nameserver domain
+8. Enter MTU size (default: 1232)
+9. Choose tunnel mode
+10. (Slipstream only) Additional mode-specific options
+11. Review summary and confirm
+12. Bot connects via SSH and runs the deployment
+13. A nologin tunnel user is created with random credentials
+14. All connection info is displayed in one message
 
 ## Requirements
 
 - Node.js 18+
-- The target server must be accessible via SSH as `root`
+- The target server must be accessible via SSH (root or a user with sudo/root privileges)
 - The target server needs internet access (to download the deploy scripts)
 
 ## Notes
 
-- **DNSTT** generates a public key after deployment — the bot will display it. You need this key for client configuration.
+- **DNSTT** generates a public key after deployment — the bot will display it along with the tunnel user credentials and domain. You need all of this to set up your client config.
 - **Slipstream** with Shadowsocks asks for port, password, and encryption method.
-- If deploying Slipstream on a server that already has DNSTT installed, you must uninstall DNSTT first.
+- If a conflicting protocol is already installed (e.g., DNSTT when deploying Slipstream), the bot will ask you to uninstall it first and handle the process automatically.
+- After deployment, a nologin system user with a random username and strong password is created on the server for tunnel authentication.
