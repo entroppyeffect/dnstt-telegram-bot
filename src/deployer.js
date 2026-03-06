@@ -1,5 +1,13 @@
 const { Client } = require("ssh2");
 
+class ConflictError extends Error {
+  constructor(existing) {
+    super(`${existing.toUpperCase()} is already installed on this server.`);
+    this.name = "ConflictError";
+    this.existing = existing; // 'dnstt' or 'slipstream'
+  }
+}
+
 const SCRIPTS = {
   dnstt:
     "https://raw.githubusercontent.com/bugfloyd/dnstt-deploy/main/dnstt-deploy.sh",
@@ -130,13 +138,7 @@ function deploy(sshConfig, params, onProgress) {
             );
           }
           if (buffer.includes("dnstt installation detected")) {
-            return finish(
-              new Error(
-                "DNSTT is already installed on this server. " +
-                  "Uninstall DNSTT first before deploying Slipstream.\n\n" +
-                  "Run on server: bash <(curl -Ls https://raw.githubusercontent.com/bugfloyd/dnstt-deploy/main/dnstt-deploy.sh) uninstall",
-              ),
-            );
+            return finish(new ConflictError("dnstt"));
           }
 
           // Process prompts sequentially
@@ -329,4 +331,117 @@ function createTunnelUser(sshConfig) {
   });
 }
 
-module.exports = { deploy, createTunnelUser };
+function uninstallExisting(sshConfig, protocol, onProgress) {
+  return new Promise((resolve, reject) => {
+    const conn = new Client();
+    let settled = false;
+
+    const timeout = setTimeout(
+      () => {
+        if (!settled) {
+          settled = true;
+          conn.end();
+          reject(new Error("Uninstall timed out (10 minutes)"));
+        }
+      },
+      10 * 60 * 1000,
+    );
+
+    function finish(err) {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      conn.end();
+      if (err) reject(err);
+      else resolve();
+    }
+
+    conn.on("ready", () => {
+      onProgress("Connected — uninstalling " + protocol.toUpperCase() + "...");
+
+      let cmd;
+      if (protocol === "dnstt") {
+        // Direct uninstall commands for dnstt since the script menu is interactive
+        cmd = [
+          "systemctl stop dnstt-server 2>/dev/null || true",
+          "systemctl disable dnstt-server 2>/dev/null || true",
+          "rm -f /etc/systemd/system/dnstt-server.service",
+          "systemctl stop danted 2>/dev/null || true",
+          "systemctl disable danted 2>/dev/null || true",
+          "rm -f /usr/local/bin/dnstt-server",
+          "rm -f /usr/local/bin/dnstt-deploy",
+          "rm -rf /etc/dnstt",
+          "userdel dnstt 2>/dev/null || true",
+          // Remove iptables rules for port 5300
+          "iptables -D INPUT -p udp --dport 5300 -j ACCEPT 2>/dev/null || true",
+          "IFACE=$(ip route | grep default | awk '{print $5}' | head -1)",
+          "iptables -t nat -D PREROUTING -i $IFACE -p udp --dport 53 -j REDIRECT --to-ports 5300 2>/dev/null || true",
+          "ip6tables -D INPUT -p udp --dport 5300 -j ACCEPT 2>/dev/null || true",
+          "ip6tables -t nat -D PREROUTING -i $IFACE -p udp --dport 53 -j REDIRECT --to-ports 5300 2>/dev/null || true",
+          "systemctl daemon-reload",
+          "echo UNINSTALL_DONE",
+        ].join(" && ");
+      } else {
+        // Direct uninstall commands for slipstream
+        cmd = [
+          "systemctl stop slipstream-rust-server 2>/dev/null || true",
+          "systemctl disable slipstream-rust-server 2>/dev/null || true",
+          "rm -f /etc/systemd/system/slipstream-rust-server.service",
+          "systemctl stop danted 2>/dev/null || true",
+          "systemctl disable danted 2>/dev/null || true",
+          "systemctl stop shadowsocks-libev-server@config 2>/dev/null || true",
+          "systemctl disable shadowsocks-libev-server@config 2>/dev/null || true",
+          "rm -f /etc/systemd/system/shadowsocks-libev-server@config.service",
+          "systemctl stop slipstream-restore-iptables 2>/dev/null || true",
+          "systemctl disable slipstream-restore-iptables 2>/dev/null || true",
+          "rm -f /etc/systemd/system/slipstream-restore-iptables.service",
+          "rm -f /usr/local/bin/slipstream-server",
+          "rm -f /usr/local/bin/slipstream-rust-deploy",
+          "rm -f /usr/local/bin/slipstream-restore-iptables.sh",
+          "rm -rf /etc/slipstream-rust",
+          "rm -rf /opt/slipstream-rust",
+          "userdel slipstream 2>/dev/null || true",
+          "iptables -D INPUT -p udp --dport 5300 -j ACCEPT 2>/dev/null || true",
+          "IFACE=$(ip route | grep default | awk '{print $5}' | head -1)",
+          "iptables -t nat -D PREROUTING -i $IFACE -p udp --dport 53 -j REDIRECT --to-ports 5300 2>/dev/null || true",
+          "ip6tables -D INPUT -p udp --dport 5300 -j ACCEPT 2>/dev/null || true",
+          "ip6tables -t nat -D PREROUTING -i $IFACE -p udp --dport 53 -j REDIRECT --to-ports 5300 2>/dev/null || true",
+          "systemctl daemon-reload",
+          "echo UNINSTALL_DONE",
+        ].join(" && ");
+      }
+
+      let output = "";
+      conn.exec(cmd, { pty: true }, (err, stream) => {
+        if (err) return finish(err);
+
+        stream.on("data", (data) => {
+          output += data.toString();
+          if (output.includes("UNINSTALL_DONE")) {
+            finish(null);
+          }
+        });
+
+        stream.on("close", () => {
+          finish(null);
+        });
+      });
+    });
+
+    conn.on("error", (err) => finish(err));
+
+    const sshOptions = {
+      host: sshConfig.host,
+      port: sshConfig.port || 22,
+      username: sshConfig.username || "root",
+      readyTimeout: 30000,
+      keepaliveInterval: 10000,
+    };
+    if (sshConfig.password) sshOptions.password = sshConfig.password;
+    if (sshConfig.privateKey) sshOptions.privateKey = sshConfig.privateKey;
+
+    conn.connect(sshOptions);
+  });
+}
+
+module.exports = { deploy, createTunnelUser, uninstallExisting, ConflictError };

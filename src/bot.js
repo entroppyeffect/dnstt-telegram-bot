@@ -1,5 +1,10 @@
 const TelegramBot = require("node-telegram-bot-api");
-const { deploy, createTunnelUser } = require("./deployer");
+const {
+  deploy,
+  createTunnelUser,
+  uninstallExisting,
+  ConflictError,
+} = require("./deployer");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -135,6 +140,82 @@ function sendConfirmation(bot, chatId, session) {
   });
 }
 
+async function runDeployWithConflictHandling(
+  bot,
+  chatId,
+  statusMsg,
+  sshConfig,
+  deployParams,
+  onProgress,
+) {
+  try {
+    return await deploy(sshConfig, deployParams, onProgress);
+  } catch (err) {
+    if (!(err instanceof ConflictError)) throw err;
+
+    // Ask user whether to uninstall the conflicting protocol
+    const existing = err.existing.toUpperCase();
+    await bot.editMessageText(
+      `⚠️ *${existing} is already installed* on this server.\n\nDo you want to uninstall ${existing} first and then install ${deployParams.protocol.toUpperCase()}?`,
+      {
+        chat_id: chatId,
+        message_id: statusMsg.message_id,
+        parse_mode: "Markdown",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "✅ Uninstall & Continue",
+                callback_data: "conflict:yes",
+              },
+              { text: "❌ Cancel", callback_data: "conflict:no" },
+            ],
+          ],
+        },
+      },
+    );
+
+    // Wait for user response via a one-time callback listener
+    const userChoice = await new Promise((resolve) => {
+      const handler = (query) => {
+        if (query.message.chat.id !== chatId) return;
+        if (!query.data.startsWith("conflict:")) return;
+        bot.removeListener("callback_query", handler);
+        bot.answerCallbackQuery(query.id);
+        resolve(query.data.split(":")[1]);
+      };
+      bot.on("callback_query", handler);
+    });
+
+    if (userChoice !== "yes") {
+      await bot.editMessageText("❌ Deployment cancelled.", {
+        chat_id: chatId,
+        message_id: statusMsg.message_id,
+      });
+      throw new Error("CONFLICT_CANCELLED");
+    }
+
+    // Uninstall existing protocol
+    await bot.editMessageText(`⏳ Uninstalling ${existing}...`, {
+      chat_id: chatId,
+      message_id: statusMsg.message_id,
+    });
+
+    await uninstallExisting(sshConfig, err.existing, onProgress);
+
+    await bot.editMessageText(
+      `✅ ${existing} uninstalled.\n\n⏳ Now deploying ${deployParams.protocol.toUpperCase()}...`,
+      {
+        chat_id: chatId,
+        message_id: statusMsg.message_id,
+      },
+    );
+
+    // Retry the deployment
+    return await deploy(sshConfig, deployParams, onProgress);
+  }
+}
+
 async function startDeployment(bot, chatId, session) {
   session.state = "DEPLOYING";
   const d = session.data;
@@ -184,7 +265,14 @@ async function startDeployment(bot, chatId, session) {
   };
 
   try {
-    const result = await deploy(sshConfig, deployParams, onProgress);
+    const result = await runDeployWithConflictHandling(
+      bot,
+      chatId,
+      statusMsg,
+      sshConfig,
+      deployParams,
+      onProgress,
+    );
 
     try {
       await bot.editMessageText("⏳ Deploying...\n\nCreating tunnel user...", {
@@ -220,11 +308,13 @@ async function startDeployment(bot, chatId, session) {
       parse_mode: "Markdown",
     });
   } catch (err) {
-    await bot.editMessageText(`❌ *Deployment Failed*\n\n${err.message}`, {
-      chat_id: chatId,
-      message_id: statusMsg.message_id,
-      parse_mode: "Markdown",
-    });
+    if (err.message !== "CONFLICT_CANCELLED") {
+      await bot.editMessageText(`❌ *Deployment Failed*\n\n${err.message}`, {
+        chat_id: chatId,
+        message_id: statusMsg.message_id,
+        parse_mode: "Markdown",
+      });
+    }
   } finally {
     // Clear sensitive data
     resetSession(chatId);
