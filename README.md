@@ -2,6 +2,14 @@
 
 A Telegram bot that deploys [DNSTT](https://github.com/bugfloyd/dnstt-deploy) or [Slipstream](https://github.com/Fox-Fig/slipstream-rust-deploy) tunnel servers on your VPS via SSH.
 
+## Quick Start
+
+You have two options:
+
+1. **Use the hosted bot:** Open [@DNSTunnelGeneratorRobot](https://t.me/DNSTunnelGeneratorRobot) in Telegram and start deploying right away.
+
+2. **Self-host your own instance (recommended):** Clone this repo and run the bot yourself. This way your server credentials never leave your machine.
+
 ## Features
 
 - **DNSTT deployment** — SSH or SOCKS tunnel mode, returns the public key needed for client config
@@ -11,7 +19,7 @@ A Telegram bot that deploys [DNSTT](https://github.com/bugfloyd/dnstt-deploy) or
 - Automatic password/key message deletion for security
 - SSH key auth via text paste or file upload
 
-## Setup
+## Self-Hosting Setup
 
 1. **Create a Telegram bot** via [@BotFather](https://t.me/BotFather) and get your bot token.
 
