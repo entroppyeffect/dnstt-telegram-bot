@@ -27,6 +27,18 @@ You have two options:
 
 ## Self-Hosting Setup
 
+### One-Line Deploy (recommended)
+
+Get a bot token from [@BotFather](https://t.me/BotFather), then run:
+
+```bash
+bash <(curl -Ls https://raw.githubusercontent.com/entroppyeffect/dnstt-telegram-bot/main/deploy.sh)
+```
+
+This installs Node.js, PM2, clones the repo, asks for your bot token, and sets up the bot as a persistent service.
+
+### Manual Setup
+
 1. **Create a Telegram bot** via [@BotFather](https://t.me/BotFather) and get your bot token.
 
 2. **Configure environment:**
