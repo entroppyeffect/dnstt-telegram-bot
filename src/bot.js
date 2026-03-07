@@ -287,7 +287,6 @@ async function startDeployment(bot, chatId, session) {
 
     let msg = "✅ *Deployment Completed Successfully!*\n\n";
     msg += `*Protocol:* ${d.protocol.toUpperCase()}\n`;
-    msg += `*Server:* \`${d.serverIp}\`\n`;
     msg += `*SSH Port:* \`${d.sshPort}\`\n`;
     msg += `*Domain:* \`${d.domain}\`\n`;
     msg += `*Mode:* ${d.tunnelMode}\n\n`;
